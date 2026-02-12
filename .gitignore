@@ -1,0 +1,37 @@
+# ======================
+# Data directories
+# ======================
+raw_slides/
+wsi_files/
+clinical/
+results_sample/
+data_sample/
+data_manifest/
+CLAM/
+
+# ======================
+# Feature files
+# ======================
+*.npy
+*.npz
+*.h5
+
+# ======================
+# Logs
+# ======================
+*.log
+
+# ======================
+# Python
+# ======================
+__pycache__/
+*.pyc
+*.pyo
+*.env
+
+
+
+
+
+
+
