@@ -1,7 +1,7 @@
 # 연구목표 
-● Whole Slide Image 내 공간적 정보 보존을 위한 attention 기반 pooling 방법 고안
-● Mean pooling 대비 제안 기법의 feature 표현력 개선 검증
-● 기존 머신러닝 기법 대비 신경망 기반 생존예측 성능 비교
+● Whole Slide Image 내 공간적 정보 보존을 위한 attention 기반 pooling 방법 고안  
+● Mean pooling 대비 제안 기법의 feature 표현력 개선 검증  
+● 기존 머신러닝 기법 대비 신경망 기반 생존예측 성능 비교  
 
 # Figures
 그림 1. survival attention heatmap
