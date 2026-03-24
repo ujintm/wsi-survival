@@ -10,7 +10,8 @@ The model replaces traditional mean pooling with learnable gated attention to pr
 # Overview
 This project proposes an attention-based Multiple Instance Learning (MIL) framework for survival prediction using Whole Slide Images (WSIs).  
 We address the limitation of mean pooling, which fails to capture the importance of discriminative regions in gigapixel pathology images.  
-We redesign the aggregation and training objective of CLAM for survival prediction.  
+We redesign the aggregation and training objective on top of the CLAM framework for survival prediction.  
+
 
 # Problem
 - WSIs contain tens of thousands of patches
@@ -34,7 +35,8 @@ The model learns to assign higher weights to patches contributing to survival ri
 # Visualization (heatmap)
 <img width="320" height="320" alt="survival_attention_heatmap" src="https://github.com/user-attachments/assets/5baaa412-025d-412d-84e3-a85c60064135" />  
   
-The model identifies regions contributing to survival prediction; however, their pathological interpretation requires validation by expert pathologists.  
+The model identifies regions contributing to survival prediction.  
+However, interpretation of these regions requires validation by expert pathologists.  
 
 # Future Work
 - Transformer-based MIL (TransMIL)
