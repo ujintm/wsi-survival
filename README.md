@@ -11,6 +11,8 @@ The model replaces traditional mean pooling with learnable gated attention to pr
 This project proposes an attention-based Multiple Instance Learning (MIL) framework for survival prediction using Whole Slide Images (WSIs).  
 We address the limitation of mean pooling, which fails to capture the importance of discriminative regions in gigapixel pathology images.  
 We redesign the aggregation and training objective on top of the CLAM framework for survival prediction.  
+Experiments are conducted on a subset of the TCGA-BRCA dataset (NIH), consisting of 190 patients. 
+A stratified train/validation split is applied based on the event distribution.
 
 
 # Problem
