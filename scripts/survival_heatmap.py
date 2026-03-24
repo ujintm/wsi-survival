@@ -48,7 +48,7 @@ with h5py.File(h5_path, "r") as f:
     h = torch.tensor(f["features"][:]).to(device)
     coords = f["coords"][:]
 
-clinical = torch.zeros(9).to(device)  # 실제 값 있으면 교체
+clinical = torch.zeros(9).to(device) 
 
 with torch.no_grad():
     risk, A = model(h, clinical, return_attention=True)
