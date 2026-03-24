@@ -19,7 +19,7 @@ We redesign the aggregation and training objective on top of the CLAM framework 
 - Important pathological regions are diluted in mean pooling
 
 # Method
-- Patch feature extraction using pretrained ResNet-50 (CLAM pipeline)
+- Patch features extracted using a pretrained ResNet-50 within the CLAM pipeline
 - Adapted CLAM for survival analysis by removing the instance-level classifier and optimizing for Cox-based risk prediction
 - Gated Attention MIL for learnable aggregation
 - Cox proportional hazards loss for survival prediction
