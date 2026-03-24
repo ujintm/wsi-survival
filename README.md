@@ -2,7 +2,7 @@
 Attention-based MIL for Survival Prediction on Whole Slide Images  
 
 # Architecture
-<img width="1408" height="768" alt="Gemini_Generated_Image_cysjcicysjcicysj" src="https://github.com/user-attachments/assets/c74183ea-cc0a-403c-a3dc-ea073d6ffb0c" />
+<img width="704" height="384" alt="Gemini_Generated_Image_cysjcicysjcicysj" src="https://github.com/user-attachments/assets/c74183ea-cc0a-403c-a3dc-ea073d6ffb0c" />
 Figure: Architecture of the proposed model. Generated using NanoBanana.  
 The model replaces traditional mean pooling with learnable gated attention to preserve discriminative pathological regions for survival prediction.  
 
@@ -30,7 +30,7 @@ The model learns to assign higher weights to patches contributing to survival ri
 - Mean pooling: severe overfitting (Train C-index: 1.0, poor generalization)
 
 # Visualization (heatmap)
-<img width="640" height="640" alt="survival_attention_heatmap" src="https://github.com/user-attachments/assets/5baaa412-025d-412d-84e3-a85c60064135" />
+<img width="320" height="320" alt="survival_attention_heatmap" src="https://github.com/user-attachments/assets/5baaa412-025d-412d-84e3-a85c60064135" />
 The model identifies regions contributing to survival prediction; however, their pathological interpretation requires validation by expert pathologists.  
 
 # Future Work
