@@ -35,28 +35,27 @@ class SurvivalAttentionModel(nn.Module):
         self.survival_head = nn.Linear(512 + 32, 1)
 
 
+    def forward(self, h, clinical, return_attention=False):
 
-    def forward(self, h, clinical):
-        # h: [N, 1024]
         h = self.feature_proj(h)  # [N,512]
 
-        # Gated Attention 적용
-        a = self.attention_a(h) # [N, 256]
-        b = self.attention_b(h) # [N, 256]
-        A = a * b               # Element-wise product
-        A = self.attention_c(A) # [N, 1]
-        
-        A = torch.softmax(A, dim=0) # 패치별 가중치 합이 1이 되도록
+        # Gated Attention
+        a = self.attention_a(h)
+        b = self.attention_b(h)
+        A = a * b
+        A = self.attention_c(A)   # [N,1]
+
+        A = torch.softmax(A, dim=0)
 
         # 가중 합 (Aggregation)
-        M = torch.sum(A * h, dim=0) # [512]
+        M = torch.sum(A * h, dim=0)
 
-        # Clinical 데이터와 결합
-        c_feat = self.clinical_net(clinical) # [32]
-        combined = torch.cat([M, c_feat], dim=0) # [544]
+        c_feat = self.clinical_net(clinical)
+        combined = torch.cat([M, c_feat], dim=0)
 
         risk = self.survival_head(combined)
-        return risk.squeeze(-1) 
-    
 
+        if return_attention:
+            return risk.squeeze(-1), A.squeeze(-1)
 
+        return risk.squeeze(-1)
