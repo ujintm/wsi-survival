@@ -4,7 +4,7 @@
 raw_slides/
 wsi_files/
 clinical/
-results_sample/
+data_sample/
 data_manifest/
 CLAM/
 
@@ -14,9 +14,6 @@ CLAM/
 *.npy
 *.npz
 *.h5
-
-!data_sample/
-!data_sample/**
 
 # ======================
 # Logs
