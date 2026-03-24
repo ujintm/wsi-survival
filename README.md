@@ -10,6 +10,7 @@ The model replaces traditional mean pooling with learnable gated attention to pr
 # Overview
 This project proposes an attention-based Multiple Instance Learning (MIL) framework for survival prediction using Whole Slide Images (WSIs).  
 We address the limitation of mean pooling, which fails to capture the importance of discriminative regions in gigapixel pathology images.  
+We redesign the aggregation and training objective of CLAM for survival prediction.  
 
 # Problem
 - WSIs contain tens of thousands of patches
@@ -18,7 +19,7 @@ We address the limitation of mean pooling, which fails to capture the importance
 
 # Method
 - Patch feature extraction using pretrained ResNet-50 (CLAM pipeline)
-- Adapted CLAM for survival analysis by removing instance-level classifier
+- Adapted CLAM for survival analysis by removing the instance-level classifier and optimizing for Cox-based risk prediction
 - Gated Attention MIL for learnable aggregation
 - Cox proportional hazards loss for survival prediction
 - Integration with 9 clinical variables
