@@ -3,59 +3,28 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
+from aggregators.attention  import AttentionAggregator
+from aggregators.transmil   import TransMILAggregator
+from aggregators.mambamil   import MambaMIL
 
-class SurvivalAttentionModel(nn.Module):
-    def __init__(self, embed_dim=1024, clinical_dim=9, dropout=True):
+
+class SurvivalModel(nn.Module):
+    def __init__(self, aggregator, clinical_dim=9):
         super().__init__()
-
-        self.feature_proj = nn.Linear(embed_dim, 512)
-
-        # Gated Attention 구조
-        self.attention_a = nn.Sequential(
-            nn.Linear(512, 256),
-            nn.Tanh()
-        )
-        self.attention_b = nn.Sequential(
-            nn.Linear(512, 256),
-            nn.Sigmoid()
-        )
-
-        if dropout:
-            self.attention_a.add_module('dropout', nn.Dropout(0.25))
-            self.attention_b.add_module('dropout', nn.Dropout(0.25))
-
-        self.attention_c = nn.Linear(256, 1)
-
+        self.aggregator = aggregator
+        
         # Clinical feature 전처리
-        self.clinical_net = nn.Sequential(
+        self.clinical_net = nn.Sequential( 
             nn.Linear(clinical_dim, 32),
             nn.ReLU()
         )
-
         self.survival_head = nn.Linear(512 + 32, 1)
 
-
-    def forward(self, h, clinical, return_attention=False):
-
-        h = self.feature_proj(h)  # [N,512]
-
-        # Gated Attention
-        a = self.attention_a(h)
-        b = self.attention_b(h)
-        A = a * b
-        A = self.attention_c(A)   # [N,1]
-
-        A = torch.softmax(A, dim=0)
-
-        # 가중 합 (Aggregation)
-        M = torch.sum(A * h, dim=0)
-
+    def forward(self, h, clinical):
+        slide_feat = self.aggregator(h)   # [512]
         c_feat = self.clinical_net(clinical)
-        combined = torch.cat([M, c_feat], dim=0)
+        combined = torch.cat([slide_feat, c_feat], dim=0)
+        return self.survival_head(combined).squeeze(-1)
 
-        risk = self.survival_head(combined)
 
-        if return_attention:
-            return risk.squeeze(-1), A.squeeze(-1)
 
-        return risk.squeeze(-1)

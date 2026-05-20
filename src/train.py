@@ -1,6 +1,7 @@
 import random
 import numpy as np
 import pandas as pd
+import argparse
 from torch.utils.data import Subset
 from sklearn.model_selection import train_test_split
 
@@ -8,7 +9,10 @@ import torch
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, random_split
 
-from model import SurvivalAttentionModel
+from model import SurvivalModel
+from aggregators.attention  import AttentionAggregator
+from aggregators.transmil   import TransMILAggregator
+from aggregators.mambamil   import MambaMIL
 
 
 def concordance_index_simple(times, risks, events):
@@ -79,7 +83,7 @@ def set_seed(seed: int):
 WEIGHT_DECAY = 1e-4          # 1e-4 ~ 1e-3 사이에서 조절
 PATIENCE = 5                 # 개선 없으면 몇 epoch 기다릴지
 MIN_DELTA = 1e-4             # 이 정도 이상 좋아져야 "개선"으로 인정
-CKPT_PATH = "best_survival_attn.pt"
+# CKPT_PATH = "best_survival_attn.pt"
 
 
 class EarlyStopping:
@@ -243,6 +247,18 @@ def train_one_epoch(model, loader, optimizer):
     return total_loss / max(updates, 1)
 
 
+parser = argparse.ArgumentParser()
+
+parser.add_argument(
+    "--model",
+    type=str,
+    default="attention",
+    choices=["attention", "transmil", "mamba"]
+)
+
+
+
+
 def main():
     set_seed(SEED)
 
@@ -278,8 +294,25 @@ def main():
         pin_memory=(DEVICE.type == "cuda"),
     )
 
+    args = parser.parse_args()
 
-    model = SurvivalAttentionModel(embed_dim=1024, clinical_dim=len(FEATURE_COLS)).to(DEVICE)
+    AGGREGATOR_NAME = args.model
+
+    if AGGREGATOR_NAME == "attention":
+        aggregator = AttentionAggregator(embed_dim=1024, out_dim=512)
+        CKPT_PATH = "best_survival_attention.pt"
+
+    elif AGGREGATOR_NAME == "transmil":
+        aggregator = TransMILAggregator(embed_dim=1024, out_dim=512)
+        CKPT_PATH = "best_survival_transmil.pt"
+
+    elif AGGREGATOR_NAME == "mamba":
+        aggregator = MambaMIL(embed_dim=1024, out_dim=512)
+        CKPT_PATH = "best_survival_mamba.pt"
+    
+    
+    # aggregator = TransMILAggregator(embed_dim=1024, out_dim=512)
+    model = SurvivalModel(aggregator).to(DEVICE)
     optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY) # AdamW + weight decay
 
     early_stopper = EarlyStopping(
@@ -305,7 +338,6 @@ def main():
             print(f"Early stopping triggered (patience={PATIENCE}).")
             break
 
-    # best 모델 로드 (선택이지만 보통 해두는 게 좋음)
     model.load_state_dict(torch.load(CKPT_PATH, map_location=DEVICE))
     print("Loaded best checkpoint:", CKPT_PATH)
 
