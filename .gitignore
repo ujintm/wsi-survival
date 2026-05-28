@@ -6,7 +6,9 @@ wsi_files/
 clinical/
 data_sample/
 data_manifest/
+data_new/
 CLAM/
+patches/
 
 # ======================
 # Feature files

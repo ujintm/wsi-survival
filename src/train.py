@@ -8,11 +8,8 @@ from sklearn.model_selection import train_test_split
 import torch
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, random_split
-
 from model import SurvivalModel
-from aggregators.attention  import AttentionAggregator
-from aggregators.transmil   import TransMILAggregator
-from aggregators.mambamil   import MambaMIL
+
 
 
 def concordance_index_simple(times, risks, events):
@@ -61,14 +58,8 @@ FEATURE_COLS = [
 EPOCHS = 50
 LR = 1e-4
 SEED = 42
-
-# CLAM 스타일: bag 1개씩 로드
 BAG_BATCH_SIZE = 1
-
-# Cox loss를 계산할 “누적 bag 개수”
-# (예: 8이면, bag 8개 risk/time/event 모아 loss 한번 계산)
-ACCUM_BAGS = 8
-
+ACCUM_BAGS = 16
 NUM_WORKERS = 0
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -80,9 +71,9 @@ def set_seed(seed: int):
     torch.cuda.manual_seed_all(seed)
 
 # ===== Regularization / Early stopping =====
-WEIGHT_DECAY = 1e-4          # 1e-4 ~ 1e-3 사이에서 조절
-PATIENCE = 5                 # 개선 없으면 몇 epoch 기다릴지
-MIN_DELTA = 1e-4             # 이 정도 이상 좋아져야 "개선"으로 인정
+WEIGHT_DECAY = 1e-4          
+PATIENCE = 10                
+MIN_DELTA = 1e-4             
 # CKPT_PATH = "best_survival_attn.pt"
 
 
@@ -90,7 +81,7 @@ class EarlyStopping:
     """
     mode='max' : metric이 클수록 좋음 (C-index)
     """
-    def __init__(self, patience=5, min_delta=1e-4, mode="max", ckpt_path="best.pt"):
+    def __init__(self, patience=10, min_delta=1e-4, mode="max", ckpt_path="best.pt"):
         self.patience = patience
         self.min_delta = min_delta
         self.mode = mode
@@ -158,7 +149,6 @@ class SurvivalDataset(Dataset):
 # =========================
 def cox_loss(risk, time, event):
     if torch.sum(event) == 0:
-        # 그래프에 연결된 0 loss (backward 가능)
         return risk.sum() * 0.0
 
     order = torch.argsort(time, descending=True)
@@ -175,8 +165,6 @@ def eval_c_index(model, loader):
     risks, times, events = [], [], []
 
     for (h, clinical, time, event) in loader:
-        # bag_batch_size=1이라서 h는 shape [1, N, 1024] 처럼 들어올 수 있음
-        # -> squeeze로 [N,1024] 맞춰줌
         h = h.squeeze(0).to(DEVICE)
         clinical = clinical.squeeze(0).to(DEVICE)
 
@@ -185,7 +173,6 @@ def eval_c_index(model, loader):
         times.append(float(time.item()))
         events.append(int(event.item()))
 
-    # risk 높을수록 위험↑ (생존↓) => 부호 반전해서 concordance_index
     return concordance_index_simple(times, np.array(risks), events)
 
 
@@ -299,19 +286,31 @@ def main():
     AGGREGATOR_NAME = args.model
 
     if AGGREGATOR_NAME == "attention":
+        from aggregators.attention import AttentionAggregator
         aggregator = AttentionAggregator(embed_dim=1024, out_dim=512)
         CKPT_PATH = "best_survival_attention.pt"
 
     elif AGGREGATOR_NAME == "transmil":
+        from aggregators.transmil import TransMILAggregator
         aggregator = TransMILAggregator(embed_dim=1024, out_dim=512)
         CKPT_PATH = "best_survival_transmil.pt"
 
-    elif AGGREGATOR_NAME == "mamba":
-        aggregator = MambaMIL(embed_dim=1024, out_dim=512)
-        CKPT_PATH = "best_survival_mamba.pt"
+    # elif AGGREGATOR_NAME == "mamba":
+        # from aggregators.mambamil import MambaMIL
+    #     aggregator = MambaMIL(embed_dim=1024, out_dim=512)
+    #     CKPT_PATH = "best_survival_mamba.pt"
     
-    
-    # aggregator = TransMILAggregator(embed_dim=1024, out_dim=512)
+    print("=" * 50)
+    print(f"Aggregator : {AGGREGATOR_NAME}")
+    print(f"Device     : {DEVICE}")
+    print(f"Train size : {len(train_set)}")
+    print(f"Val size   : {len(val_set)}")
+    print(f"LR         : {LR}")
+    print(f"Epochs     : {EPOCHS}")
+    print(f"Accum bags : {ACCUM_BAGS}")
+    print(f"Checkpoint : {CKPT_PATH}")
+    print("=" * 50) 
+
     model = SurvivalModel(aggregator).to(DEVICE)
     optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY) # AdamW + weight decay
 
@@ -327,11 +326,13 @@ def main():
         val_c = eval_c_index(model, val_loader)
 
         improved, should_stop = early_stopper.step(val_c, model)
+        status = "↑" if improved else "-"
 
         print(
-            f"[Epoch {epoch:03d}] train_loss={train_loss:.4f}  "
-            f"val_cindex={val_c:.4f}  best={early_stopper.best:.4f}  "
-            f"{'(improved)' if improved else ''}"
+            f"Epoch {epoch:02d} | "
+            f"loss {train_loss:.4f} | "
+            f"c-index {val_c:.4f} | "
+            f"best {early_stopper.best:.4f} {status}"
         )
 
         if should_stop:
