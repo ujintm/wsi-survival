@@ -8,6 +8,9 @@ data_sample/
 data_manifest/
 data_new/
 patches/
+data_1/
+data_3/
+final/
 
 # ======================
 # Feature files
@@ -36,3 +39,9 @@ __pycache__/
 
 
 *.pt
+
+
+CLAM/results/
+CLAM/heatmaps/
+CLAM/__pycache__/
+*.pyc
