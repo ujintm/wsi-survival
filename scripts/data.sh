@@ -18,7 +18,7 @@ do
         -d "$DOWNLOAD_DIR"
 
     echo "===== MOVE SVS FILES ====="
-    find "$DOWNLOAD_DIR" -name "*.svs" -exec mv -t "$WSI_DIR" {} +  
+    find "$DOWNLOAD_DIR" -name "*.svs" -print0 | xargs -0 -r mv -t "$WSI_DIR"
 
     echo "===== PATCH ====="
     python create_patches_fp.py \
