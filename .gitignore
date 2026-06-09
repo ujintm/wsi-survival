@@ -6,12 +6,9 @@ wsi_files/
 clinical/
 data_sample/
 data_manifest/
-data_new/
 patches/
-data_1/
-data_3/
-final/
 external/
+clinical.cart.2026-06-08/
 
 # ======================
 # Feature files
