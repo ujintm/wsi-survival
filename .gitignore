@@ -3,12 +3,11 @@
 # ======================
 raw_slides/
 wsi_files/
-clinical/
-data_sample/
-data_manifest/
 patches/
 external/
+etc/
 clinical.cart.2026-06-08/
+CLAM/
 
 # ======================
 # Feature files
@@ -29,20 +28,5 @@ __pycache__/
 *.pyc
 *.pyo
 *.env
-
-
-
-
-
-
-
 *.pt
-
-
-CLAM/results/
-CLAM/heatmaps/
-CLAM/__pycache__/
 *.pyc
-
-scripts/data.sh
-notebooks/
