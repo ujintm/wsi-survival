@@ -41,7 +41,7 @@ def concordance_index_simple(times, risks, events):
 # =========================
 # Config
 # =========================
-CSV_PATH = "../clinical/clinical_survival_processed.csv"
+CSV_PATH = '/home/yuz/wsi-survival/clinical_survival_processed.csv'
 
 FEATURE_COLS = [
     'demographic.age_at_index',
@@ -118,30 +118,48 @@ class EarlyStopping:
 # Dataset: bag 1개씩 반환
 # =========================
 class SurvivalDataset(Dataset):
-    def __init__(self, csv_path: str):
-        self.data = pd.read_csv(csv_path)
+    def __init__(self, data):
+        self.data = data.reset_index(drop=True)
+        self.patient_ids = self.data["cases.submitter_id"].unique()
+
         if "feature_path" not in self.data.columns:
             raise ValueError("CSV에 'feature_path' 컬럼이 없습니다.")
 
     def __len__(self):
-        return len(self.data)
+        return len(self.patient_ids)
 
     def __getitem__(self, idx):
-        row = self.data.iloc[idx]
+        patient_id = self.patient_ids[idx]
+        rows = self.data[self.data["cases.submitter_id"] == patient_id]
 
-        # WSI bag feature: [N, 1024] (N 가변)
-        h = torch.load(row["feature_path"]).float()
+        slide_feats = []
 
-        # clinical: [9]
+        MAX_PATCHES = 10000
+
+        for _, row in rows.iterrows():
+            h = torch.load(row["feature_path"]).float()
+
+            if h.shape[0] > MAX_PATCHES:
+                patch_idx = torch.randperm(h.shape[0])[:MAX_PATCHES]
+                h = h[patch_idx]
+
+            slide_feats.append(h)  # each h: [num_patches, 1024]
+
+        row = rows.iloc[0]
+
         clinical_np = pd.to_numeric(row[FEATURE_COLS], errors="coerce").to_numpy(dtype=np.float32)
         clinical_np = np.nan_to_num(clinical_np, nan=0.0, posinf=0.0, neginf=0.0)
         clinical = torch.from_numpy(clinical_np)
 
-        # survival
         time = torch.tensor(float(row["survival_time"]), dtype=torch.float32)
         event = torch.tensor(float(row["event"]), dtype=torch.float32)
 
-        return h, clinical, time, event
+        return slide_feats, clinical, time, event
+
+def collate_fn(batch):
+    # batch_size=1이므로 batch 안에 환자 1명만 들어있음
+    slides, clinical, time, event = batch[0]
+    return slides, clinical, time, event
 
 
 # =========================
@@ -165,8 +183,8 @@ def eval_c_index(model, loader):
     risks, times, events = [], [], []
 
     for (h, clinical, time, event) in loader:
-        h = h.squeeze(0).to(DEVICE)
-        clinical = clinical.squeeze(0).to(DEVICE)
+        h = [slide.to(DEVICE) for slide in h]
+        clinical = clinical.to(DEVICE)
 
         r = model(h, clinical)
         risks.append(float(r.item()))
@@ -188,8 +206,8 @@ def train_one_epoch(model, loader, optimizer):
     optimizer.zero_grad(set_to_none=True)
 
     for step, (h, clinical, time, event) in enumerate(loader, start=1):
-        h = h.squeeze(0).to(DEVICE)
-        clinical = clinical.squeeze(0).to(DEVICE)
+        h = [slide.to(DEVICE) for slide in h]
+        clinical = clinical.to(DEVICE)
         time = time.to(DEVICE)
         event = event.to(DEVICE)
 
@@ -240,30 +258,34 @@ parser.add_argument(
     "--model",
     type=str,
     default="attention",
-    choices=["attention", "transmil", "mamba"]
+    choices=["attention", "transmil", "mamba", "mean"]
 )
 
 
 
 
 def main():
+    args = parser.parse_args()
     set_seed(SEED)
 
-    dataset = SurvivalDataset(CSV_PATH)
+    df = pd.read_csv(CSV_PATH)
 
-    # stratified train/val split (by event)
-    indices = np.arange(len(dataset))
-    events = dataset.data["event"].values  # SurvivalDataset 안에서 self.data로 읽어둔 df 사용
+    patient_df = df.drop_duplicates("cases.submitter_id")
+    patients = patient_df["cases.submitter_id"].values
+    events = patient_df["event"].values
 
-    train_idx, val_idx = train_test_split(
-        indices,
+    train_patients, val_patients = train_test_split(
+        patients,
         test_size=0.2,
         random_state=SEED,
         stratify=events
     )
 
-    train_set = Subset(dataset, train_idx)
-    val_set   = Subset(dataset, val_idx)
+    train_df = df[df["cases.submitter_id"].isin(train_patients)]
+    val_df = df[df["cases.submitter_id"].isin(val_patients)]
+
+    train_set = SurvivalDataset(train_df)
+    val_set = SurvivalDataset(val_df)
 
     train_loader = DataLoader(
         train_set,
@@ -271,6 +293,7 @@ def main():
         shuffle=True,
         num_workers=NUM_WORKERS,
         pin_memory=(DEVICE.type == "cuda"),
+        collate_fn=collate_fn,
     )
 
     val_loader = DataLoader(
@@ -279,9 +302,8 @@ def main():
         shuffle=False,
         num_workers=NUM_WORKERS,
         pin_memory=(DEVICE.type == "cuda"),
+        collate_fn=collate_fn,
     )
-
-    args = parser.parse_args()
 
     AGGREGATOR_NAME = args.model
 
@@ -292,13 +314,23 @@ def main():
 
     elif AGGREGATOR_NAME == "transmil":
         from aggregators.transmil import TransMILAggregator
-        aggregator = TransMILAggregator(embed_dim=1024, out_dim=512)
+        aggregator = TransMILAggregator()
         CKPT_PATH = "best_survival_transmil.pt"
 
-    # elif AGGREGATOR_NAME == "mamba":
-        # from aggregators.mambamil import MambaMIL
-    #     aggregator = MambaMIL(embed_dim=1024, out_dim=512)
-    #     CKPT_PATH = "best_survival_mamba.pt"
+    elif AGGREGATOR_NAME == "mamba":
+        from aggregators.mambamil import MambaMIL
+        aggregator = MambaMIL(
+            in_dim=1024,
+            n_classes=512,
+            dropout=0.25,
+            act="relu"
+        )
+        CKPT_PATH = "best_survival_mamba.pt"
+
+    elif AGGREGATOR_NAME == "mean":
+        from aggregators.mean import MeanPoolingAggregator
+        aggregator = MeanPoolingAggregator()
+        CKPT_PATH = "best_survival_mean.pt"
     
     print("=" * 50)
     print(f"Aggregator : {AGGREGATOR_NAME}")

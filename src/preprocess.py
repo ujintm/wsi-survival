@@ -2,8 +2,9 @@ import pandas as pd
 import numpy as np
 import os
 
-clinical = pd.read_csv('../clinical/clinical.tsv', sep='\t')
+clinical = pd.read_csv('/home/yuz/pathML/clinical.cart.2026-06-08/clinical.tsv', sep='\t')
 unique_patients = clinical['cases.case_id'].nunique()
+print(clinical['demographic.vital_status'].value_counts(dropna=False))
 
 survival_cols = [
     'cases.submitter_id',
@@ -78,7 +79,7 @@ df_final = df_patient[final_cols].dropna()
 
 
 # WSI feature 매칭
-feature_dir = '../CLAM/results/features/pt_files'
+feature_dir = '/mnt/e/pathML/features_uni/pt_files'
 feature_files = [f for f in os.listdir(feature_dir) if f.endswith('.pt')]
 
 path_data = []
@@ -88,9 +89,16 @@ for f in feature_files:
     full_path = os.path.abspath(os.path.join(feature_dir, f))
     path_data.append({'cases.submitter_id': patient_id, 'feature_path': full_path})
 
-df_path = pd.DataFrame(path_data).drop_duplicates('cases.submitter_id')
+df_path = pd.DataFrame(path_data)
 df_final = df_final.merge(df_path, on='cases.submitter_id', how='inner')
 
-df_final.to_csv('../clinical/clinical_survival_processed.csv', index=False)
-print(f"최종 병합 완료: {len(df_final)}명")
+df_final.to_csv('/home/yuz/wsi-survival/clinical_survival_processed.csv', index=False)
+print(f"최종 병합 완료: {len(df_final)}")
+print(f"{df_final['cases.submitter_id'].nunique()}명")
 print(f"컬럼 구성: {df_final.columns.tolist()}")
+print(
+    df_final[['cases.submitter_id','event']]
+    .drop_duplicates()
+    ['event']
+    .value_counts()
+)

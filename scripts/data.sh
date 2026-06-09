@@ -5,10 +5,10 @@ for manifest in manifests/*.txt
 do
     name=$(basename "$manifest" .txt)
 
-    DOWNLOAD_DIR="/home/server05/data/$name"
-    WSI_DIR="/home/server05/wsi_files/$name"
-    RESULT_DIR="/home/server05/wsi-survival/patches/$name"
-    PROCESS_CSV="/home/server05/wsi-survival/process_lists/$name.csv"
+    DOWNLOAD_DIR="/home/yuz/pathML/data/$name"
+    WSI_DIR="/home/yuz/pathML/wsi_files/$name"
+    RESULT_DIR="/home/yuz/pathML/patches/$name"
+    PROCESS_CSV="/home/yuz/pathML/process_lists/$name.csv"
 
     mkdir -p "$DOWNLOAD_DIR" "$WSI_DIR" "$RESULT_DIR" "$(dirname "$PROCESS_CSV")"
 

@@ -94,11 +94,11 @@ class TransMILAggregator(nn.Module):
         self.model = TransMIL(n_classes=1)
 
     def forward(self, h):
-        # h: [N, 1024] → [1, N, 1024]
-        h = h.unsqueeze(0)
+        
+        h = h.unsqueeze(0)         # h: [N, 1024] → [1, N, 1024]
         out = self.model(data=h)   # [1, 512]
         return out.squeeze(0)      # [512]
-            
+    
         
 if __name__ == "__main__":
     data = torch.randn((1, 6000, 1024)).cuda()

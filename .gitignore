@@ -11,6 +11,7 @@ patches/
 data_1/
 data_3/
 final/
+external/
 
 # ======================
 # Feature files
@@ -45,3 +46,6 @@ CLAM/results/
 CLAM/heatmaps/
 CLAM/__pycache__/
 *.pyc
+
+scripts/data.sh
+notebooks/

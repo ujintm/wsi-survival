@@ -1,0 +1,14 @@
+timm
+openslide-python
+h5py
+pandas
+scikit-learn
+scikit-survival
+lifelines
+matplotlib
+seaborn
+tqdm
+huggingface_hub
+nystrom-attention
+einops
+tensorboardX
