@@ -41,7 +41,7 @@ y = Surv.from_arrays(
 
 stage_map = {
     'Stage I': 1, 'Stage IA': 1, 'Stage IB': 1,
-    'Stage II': 2, 'Stage IIA': 2, 'Stage IIB': 2,
+    'Stage II': 2, 'Stage FfIIA': 2, 'Stage IIB': 2,
     'Stage III': 3, 'Stage IIIA': 3, 'Stage IIIB': 3, 'Stage IIIC': 3,
     'Stage IV': 4
 }
@@ -86,8 +86,11 @@ path_data = []
 for f in feature_files:
     # 환자 ID 추출 (TCGA-A2-A0T1)
     patient_id = '-'.join(f.split('-')[:3])
-    full_path = os.path.abspath(os.path.join(feature_dir, f))
-    path_data.append({'cases.submitter_id': patient_id, 'feature_path': full_path})
+    # full_path = os.path.abspath(os.path.join(feature_dir, f))
+    # path_data.append({'cases.submitter_id': patient_id, '': full_path})
+    path_data.append({
+    "cases.submitter_id": patient_id,
+    "feature_file": f})
 
 df_path = pd.DataFrame(path_data)
 df_final = df_final.merge(df_path, on='cases.submitter_id', how='inner')

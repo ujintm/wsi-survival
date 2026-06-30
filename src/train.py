@@ -1,9 +1,11 @@
 import random
 import numpy as np
 import pandas as pd
+import os
 import argparse
 from torch.utils.data import Subset
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold
+from tqdm import tqdm
 
 import torch
 import torch.optim as optim
@@ -55,7 +57,7 @@ FEATURE_COLS = [
     'dx_Other'
 ]
 
-EPOCHS = 50
+EPOCHS = 100
 LR = 1e-4
 SEED = 42
 BAG_BATCH_SIZE = 1
@@ -72,9 +74,10 @@ def set_seed(seed: int):
 
 # ===== Regularization / Early stopping =====
 WEIGHT_DECAY = 1e-4          
-PATIENCE = 10                
+PATIENCE = 100                
 MIN_DELTA = 1e-4             
 # CKPT_PATH = "best_survival_attn.pt"
+history = []
 
 
 class EarlyStopping:
@@ -98,20 +101,24 @@ class EarlyStopping:
         else:  # mode == "min"
             return metric < (self.best - self.min_delta)
 
-    def step(self, metric, model):
-        """
-        Returns:
-            improved (bool), should_stop (bool)
-        """
+
+    def step(self, metric, model, optimizer, epoch):
         if self._is_improved(metric):
             self.best = metric
             self.num_bad_epochs = 0
-            torch.save(model.state_dict(), self.ckpt_path)
+
+            torch.save({
+                "epoch": epoch,
+                "model_state": model.state_dict(),
+                "optimizer_state": optimizer.state_dict(),
+                "best_c": self.best,
+            }, self.ckpt_path)
+
             return True, False
         else:
             self.num_bad_epochs += 1
             should_stop = self.num_bad_epochs >= self.patience
-            return False, should_stop
+            return False, should_stop     
 
 
 # =========================
@@ -134,10 +141,16 @@ class SurvivalDataset(Dataset):
 
         slide_feats = []
 
-        MAX_PATCHES = 10000
+        
+        MAX_PATCHES = 4096
+
+        PT_DIR = "/home/yuz/wsi-survival/features_uni/pt_files"
 
         for _, row in rows.iterrows():
-            h = torch.load(row["feature_path"]).float()
+            pt_name = os.path.basename(row["feature_path"])
+            pt_path = os.path.join(PT_DIR, pt_name)
+
+            h = torch.load(pt_path).float()
 
             if h.shape[0] > MAX_PATCHES:
                 patch_idx = torch.randperm(h.shape[0])[:MAX_PATCHES]
@@ -194,7 +207,6 @@ def eval_c_index(model, loader):
     return concordance_index_simple(times, np.array(risks), events)
 
 
-
 def train_one_epoch(model, loader, optimizer):
     model.train()
     total_loss = 0.0
@@ -205,7 +217,10 @@ def train_one_epoch(model, loader, optimizer):
 
     optimizer.zero_grad(set_to_none=True)
 
-    for step, (h, clinical, time, event) in enumerate(loader, start=1):
+    for step, (h, clinical, time, event) in enumerate(
+        tqdm(loader, desc="Training", leave=False),
+        start=1
+    ):
         h = [slide.to(DEVICE) for slide in h]
         clinical = clinical.to(DEVICE)
         time = time.to(DEVICE)
@@ -262,6 +277,30 @@ parser.add_argument(
 )
 
 
+def build_aggregator(name):
+    if name == "attention":
+        from aggregators.attention import AttentionAggregator
+        return AttentionAggregator(embed_dim=1024, out_dim=512)
+
+    elif name == "transmil":
+        from aggregators.transmil import TransMILAggregator
+        return TransMILAggregator()
+
+    elif name == "mamba":
+        from aggregators.mambamil import MambaMIL
+        return MambaMIL(
+            in_dim=1024,
+            n_classes=512,
+            dropout=0.25,
+            act="relu"
+        )
+
+    elif name == "mean":
+        from aggregators.mean import MeanPoolingAggregator
+        return MeanPoolingAggregator()
+
+    else:
+        raise ValueError(f"Unknown aggregator: {name}")
 
 
 def main():
@@ -270,109 +309,128 @@ def main():
 
     df = pd.read_csv(CSV_PATH)
 
-    patient_df = df.drop_duplicates("cases.submitter_id")
+    AGGREGATOR_NAME = args.model
+
+    patient_df = df.drop_duplicates("cases.submitter_id").reset_index(drop=True)
     patients = patient_df["cases.submitter_id"].values
     events = patient_df["event"].values
 
-    train_patients, val_patients = train_test_split(
-        patients,
-        test_size=0.2,
-        random_state=SEED,
-        stratify=events
-    )
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
+    fold_results = []
 
-    train_df = df[df["cases.submitter_id"].isin(train_patients)]
-    val_df = df[df["cases.submitter_id"].isin(val_patients)]
+    for fold, (train_idx, val_idx) in enumerate(skf.split(patients, events), start=1):
+        print(f"\n========== Fold {fold}/5 ==========")
 
-    train_set = SurvivalDataset(train_df)
-    val_set = SurvivalDataset(val_df)
+        train_patients = patients[train_idx]
+        val_patients = patients[val_idx]
 
-    train_loader = DataLoader(
-        train_set,
-        batch_size=BAG_BATCH_SIZE,
-        shuffle=True,
-        num_workers=NUM_WORKERS,
-        pin_memory=(DEVICE.type == "cuda"),
-        collate_fn=collate_fn,
-    )
+        train_df = df[df["cases.submitter_id"].isin(train_patients)]
+        val_df = df[df["cases.submitter_id"].isin(val_patients)]
 
-    val_loader = DataLoader(
-        val_set,
-        batch_size=BAG_BATCH_SIZE,
-        shuffle=False,
-        num_workers=NUM_WORKERS,
-        pin_memory=(DEVICE.type == "cuda"),
-        collate_fn=collate_fn,
-    )
+        train_set = SurvivalDataset(train_df)
+        val_set = SurvivalDataset(val_df)
 
-    AGGREGATOR_NAME = args.model
-
-    if AGGREGATOR_NAME == "attention":
-        from aggregators.attention import AttentionAggregator
-        aggregator = AttentionAggregator(embed_dim=1024, out_dim=512)
-        CKPT_PATH = "best_survival_attention.pt"
-
-    elif AGGREGATOR_NAME == "transmil":
-        from aggregators.transmil import TransMILAggregator
-        aggregator = TransMILAggregator()
-        CKPT_PATH = "best_survival_transmil.pt"
-
-    elif AGGREGATOR_NAME == "mamba":
-        from aggregators.mambamil import MambaMIL
-        aggregator = MambaMIL(
-            in_dim=1024,
-            n_classes=512,
-            dropout=0.25,
-            act="relu"
-        )
-        CKPT_PATH = "best_survival_mamba.pt"
-
-    elif AGGREGATOR_NAME == "mean":
-        from aggregators.mean import MeanPoolingAggregator
-        aggregator = MeanPoolingAggregator()
-        CKPT_PATH = "best_survival_mean.pt"
-    
-    print("=" * 50)
-    print(f"Aggregator : {AGGREGATOR_NAME}")
-    print(f"Device     : {DEVICE}")
-    print(f"Train size : {len(train_set)}")
-    print(f"Val size   : {len(val_set)}")
-    print(f"LR         : {LR}")
-    print(f"Epochs     : {EPOCHS}")
-    print(f"Accum bags : {ACCUM_BAGS}")
-    print(f"Checkpoint : {CKPT_PATH}")
-    print("=" * 50) 
-
-    model = SurvivalModel(aggregator).to(DEVICE)
-    optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY) # AdamW + weight decay
-
-    early_stopper = EarlyStopping(
-        patience=PATIENCE,
-        min_delta=MIN_DELTA,
-        mode="max",
-        ckpt_path=CKPT_PATH,
-    )
-
-    for epoch in range(1, EPOCHS + 1):
-        train_loss = train_one_epoch(model, train_loader, optimizer)
-        val_c = eval_c_index(model, val_loader)
-
-        improved, should_stop = early_stopper.step(val_c, model)
-        status = "↑" if improved else "-"
-
-        print(
-            f"Epoch {epoch:02d} | "
-            f"loss {train_loss:.4f} | "
-            f"c-index {val_c:.4f} | "
-            f"best {early_stopper.best:.4f} {status}"
+        train_loader = DataLoader(
+            train_set,
+            batch_size=BAG_BATCH_SIZE,
+            shuffle=True,
+            num_workers=NUM_WORKERS,
+            pin_memory=(DEVICE.type == "cuda"),
+            collate_fn=collate_fn,
         )
 
-        if should_stop:
-            print(f"Early stopping triggered (patience={PATIENCE}).")
-            break
+        val_loader = DataLoader(
+            val_set,
+            batch_size=BAG_BATCH_SIZE,
+            shuffle=False,
+            num_workers=NUM_WORKERS,
+            pin_memory=(DEVICE.type == "cuda"),
+            collate_fn=collate_fn,
+        )
 
-    model.load_state_dict(torch.load(CKPT_PATH, map_location=DEVICE))
-    print("Loaded best checkpoint:", CKPT_PATH)
+        aggregator = build_aggregator(AGGREGATOR_NAME)
+        CKPT_PATH = f"best_survival_{AGGREGATOR_NAME}_fold{fold}.pt"
+        
+        
+        print("=" * 50)
+        print(f"Aggregator : {AGGREGATOR_NAME}")
+        print(f"Fold       : {fold}")
+        print(f"Device     : {DEVICE}")
+        print(f"Train size : {len(train_set)}")
+        print(f"Val size   : {len(val_set)}")
+        print(f"Val events : {int(val_df.drop_duplicates('cases.submitter_id')['event'].sum())}")
+        print(f"LR         : {LR}")
+        print(f"Epochs     : {EPOCHS}")
+        print(f"Accum bags : {ACCUM_BAGS}")
+        print(f"Checkpoint : {CKPT_PATH}")
+        print("=" * 50) 
+
+        model = SurvivalModel(aggregator).to(DEVICE)
+        optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY) # AdamW + weight decay
+
+
+        early_stopper = EarlyStopping(
+            patience=PATIENCE,
+            min_delta=MIN_DELTA,
+            mode="max",
+            ckpt_path=CKPT_PATH,
+        )
+
+        history = []
+
+        for epoch in range(1, EPOCHS + 1):
+            print(f"\n===== Fold {fold} | Epoch {epoch}/{EPOCHS} =====")
+            
+            train_loss = train_one_epoch(model, train_loader, optimizer)
+            val_c = eval_c_index(model, val_loader)
+
+
+            improved, should_stop = early_stopper.step(val_c, model, optimizer, epoch)
+            status = "↑" if improved else "-"
+
+            history.append({
+                "fold": fold,
+                "epoch": epoch,
+                "train_loss": train_loss,
+                "val_c_index": val_c,
+                "best_c_index": early_stopper.best,
+            })   
+            pd.DataFrame(history).to_csv(
+                f"history_{AGGREGATOR_NAME}_fold{fold}.csv",
+                index=False
+            )            
+
+            print(
+                f"Fold {fold} | "
+                f"Epoch {epoch:02d} | "
+                f"loss {train_loss:.4f} | "
+                f"c-index {val_c:.4f} | "
+                f"best {early_stopper.best:.4f} {status}"
+            )
+
+            if should_stop:
+                print(f"Early stopping triggered (patience={PATIENCE}).")
+                break
+
+        fold_results.append({
+            "fold": fold,
+            "best_c_index": early_stopper.best,
+            "train_size": len(train_set),
+            "val_size": len(val_set),
+            "val_events": int(val_df.drop_duplicates("cases.submitter_id")["event"].sum()),
+        })
+
+        pd.DataFrame(fold_results).to_csv(
+            f"cv_results_{AGGREGATOR_NAME}.csv",
+            index=False
+        )
+
+    result_df = pd.DataFrame(fold_results)
+
+    print("\n========== 5-Fold CV Result ==========")
+    print(result_df)
+    print(f"Mean C-index: {result_df['best_c_index'].mean():.4f}")
+    print(f"Std C-index : {result_df['best_c_index'].std():.4f}")
 
 
 if __name__ == "__main__":

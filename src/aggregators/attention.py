@@ -44,6 +44,7 @@ class AttentionAggregator(nn.Module):
         )
 
     def forward(self, h, return_attention=False):
+        # print(f"input h: {h.shape}")  
         # h: [N, 1024]
         h = self.feature_proj(h)             # [N, 512]
 

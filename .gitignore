@@ -30,3 +30,6 @@ __pycache__/
 *.env
 *.pt
 *.pyc
+*.json
+*.txt
+*.csv

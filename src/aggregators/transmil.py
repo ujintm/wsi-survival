@@ -89,12 +89,20 @@ class TransMIL(nn.Module):
 
 
 class TransMILAggregator(nn.Module):
-    def __init__(self):
+    def __init__(self, max_patches=4096):
         super().__init__()
+        self.max_patches = max_patches
         self.model = TransMIL(n_classes=1)
 
     def forward(self, h):
-        
+        # print("before: ", h.shape)
+
+        if h.size(0) > self.max_patches:
+            idx = torch.randperm(h.size(0), device=h.device)[:self.max_patches]
+            h = h[idx]
+
+        # print("after: ", h.shape)
+
         h = h.unsqueeze(0)         # h: [N, 1024] → [1, N, 1024]
         out = self.model(data=h)   # [1, 512]
         return out.squeeze(0)      # [512]
