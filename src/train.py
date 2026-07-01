@@ -77,7 +77,7 @@ WEIGHT_DECAY = 1e-4
 PATIENCE = 100                
 MIN_DELTA = 1e-4             
 # CKPT_PATH = "best_survival_attn.pt"
-history = []
+# history = []
 
 
 class EarlyStopping:
@@ -310,15 +310,29 @@ def main():
     df = pd.read_csv(CSV_PATH)
 
     AGGREGATOR_NAME = args.model
+    RESULT_PATH = f"cv_results_{AGGREGATOR_NAME}.csv"
 
     patient_df = df.drop_duplicates("cases.submitter_id").reset_index(drop=True)
     patients = patient_df["cases.submitter_id"].values
     events = patient_df["event"].values
 
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
-    fold_results = []
+
+    if os.path.exists(RESULT_PATH):
+        prev_results = pd.read_csv(RESULT_PATH)
+        completed_folds = set(prev_results["fold"].astype(int).tolist())
+        fold_results = prev_results.to_dict("records")
+    else:
+        completed_folds = set()
+        fold_results = []
+
 
     for fold, (train_idx, val_idx) in enumerate(skf.split(patients, events), start=1):
+
+        if fold in completed_folds:
+            print(f"\n========== Fold {fold}/5 already completed. Skip. ==========")
+            continue
+
         print(f"\n========== Fold {fold}/5 ==========")
 
         train_patients = patients[train_idx]
@@ -349,8 +363,9 @@ def main():
         )
 
         aggregator = build_aggregator(AGGREGATOR_NAME)
+
         CKPT_PATH = f"best_survival_{AGGREGATOR_NAME}_fold{fold}.pt"
-        
+        LAST_CKPT_PATH = f"last_survival_{AGGREGATOR_NAME}_fold{fold}.pt"
         
         print("=" * 50)
         print(f"Aggregator : {AGGREGATOR_NAME}")
@@ -363,6 +378,7 @@ def main():
         print(f"Epochs     : {EPOCHS}")
         print(f"Accum bags : {ACCUM_BAGS}")
         print(f"Checkpoint : {CKPT_PATH}")
+        print(f"Last ckpt  : {LAST_CKPT_PATH}")
         print("=" * 50) 
 
         model = SurvivalModel(aggregator).to(DEVICE)
@@ -376,9 +392,27 @@ def main():
             ckpt_path=CKPT_PATH,
         )
 
+        start_epoch = 1
         history = []
 
-        for epoch in range(1, EPOCHS + 1):
+        if os.path.exists(LAST_CKPT_PATH):
+            ckpt = torch.load(LAST_CKPT_PATH, map_location=DEVICE)
+
+            model.load_state_dict(ckpt["model_state"])
+            optimizer.load_state_dict(ckpt["optimizer_state"])
+
+            start_epoch = ckpt["epoch"] + 1
+            early_stopper.best = ckpt.get("best_c", None)
+            early_stopper.num_bad_epochs = ckpt.get("num_bad_epochs", 0)
+            history = ckpt.get("history", [])
+
+            print(
+                f"Resumed Fold {fold} from epoch {ckpt['epoch']} | "
+                f"best C-index {early_stopper.best:.4f}"
+            )
+
+
+        for epoch in range(start_epoch, EPOCHS + 1):
             print(f"\n===== Fold {fold} | Epoch {epoch}/{EPOCHS} =====")
             
             train_loss = train_one_epoch(model, train_loader, optimizer)
@@ -400,6 +434,17 @@ def main():
                 index=False
             )            
 
+            torch.save({
+                "fold": fold,
+                "epoch": epoch,
+                "model_state": model.state_dict(),
+                "optimizer_state": optimizer.state_dict(),
+                "best_c": early_stopper.best,
+                "num_bad_epochs": early_stopper.num_bad_epochs,
+                "history": history,
+            }, LAST_CKPT_PATH)
+
+
             print(
                 f"Fold {fold} | "
                 f"Epoch {epoch:02d} | "
@@ -418,10 +463,11 @@ def main():
             "train_size": len(train_set),
             "val_size": len(val_set),
             "val_events": int(val_df.drop_duplicates("cases.submitter_id")["event"].sum()),
+            
         })
 
         pd.DataFrame(fold_results).to_csv(
-            f"cv_results_{AGGREGATOR_NAME}.csv",
+            RESULT_PATH,
             index=False
         )
 
@@ -429,8 +475,10 @@ def main():
 
     print("\n========== 5-Fold CV Result ==========")
     print(result_df)
-    print(f"Mean C-index: {result_df['best_c_index'].mean():.4f}")
-    print(f"Std C-index : {result_df['best_c_index'].std():.4f}")
+
+    if len(result_df) > 0:
+        print(f"Mean C-index: {result_df['best_c_index'].mean():.4f}")
+        print(f"Std C-index : {result_df['best_c_index'].std():.4f}")
 
 
 if __name__ == "__main__":
