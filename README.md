@@ -8,6 +8,11 @@ Unlike prior work, which mostly compares MIL aggregators on classification tasks
 
 Experiments are conducted on the TCGA-BRCA (Breast Invasive Carcinoma) cohort. After matching WSI data with clinical records, **707 patients** (avg. ~2.2 WSIs/patient) were included, with **patient-level** train/test splitting to prevent data leakage.
 
+# Architecture
+<img width="3774" height="2384" alt="그림1" src="https://github.com/user-attachments/assets/5037c6cb-ecae-477a-b586-66b4d98aebf3" />
+
+The pipeline has two aggregation levels. **Level 1 (patch → slide)** applies the compared aggregator — Attention MIL, TransMIL, or MambaMIL — to a slide's patch features to produce a slide-level representation; this is the only stage that changes across experiments. **Level 2 (slide → patient)** applies a fixed attention aggregator (identical across all experiments) to combine a patient's multiple slide representations into a patient-level representation. This is concatenated with clinical features, passed through the survival prediction network to output a risk score, and trained with the Cox survival loss.
+
 # Problem
 - A single WSI contains tens of thousands of patches, and patients often have multiple slides
 - Simple pooling (mean/max) can't capture which patches — or which slides — matter most for prognosis
@@ -53,10 +58,10 @@ Re-running experiments on an expanded, event-enriched cohort (**151 deaths**, up
 - Compare additional feature extractors (ResNet, PLIP, UNI) under the same aggregation setup
 - Multi-modal extension incorporating genomic/omics data alongside WSI and clinical features
 
+
 # References
 [1] Ilse et al., "Attention-based Deep Multiple Instance Learning," ICML 2018.
 [2] Lu et al., "Data-efficient and weakly supervised computational pathology on whole-slide images," Nature Biomedical Engineering, 2021.
 [3] Shao et al., "TransMIL: Transformer based correlated multiple instance learning for whole slide image classification," NeurIPS 2021.
 [4] Yang et al., "MambaMIL: Enhancing long sequence modeling with sequence reordering in computational pathology," MICCAI 2024.
 [5] Chen et al., "Towards a general-purpose foundation model for computational pathology," Nature Medicine, 2024.
-
